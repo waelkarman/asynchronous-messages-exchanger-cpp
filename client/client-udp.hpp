@@ -59,8 +59,8 @@ private:
     TSDeQueue<string> messages_to_send;
     TSVector<thread> workers;
     TSVector<thread> t_workers;
-    TSVector<function<void()>> tasks;
-    TSVector<function<void()>> t_tasks;
+    TSVector<tuple<string,function<void()>>> tasks;
+    TSVector<tuple<string,function<void()>>> t_tasks;
     mutex task_queue_mutex;
     MessageType TYPE_MSG = MSG;
     MessageType TYPE_ACK = ACK;
@@ -86,7 +86,7 @@ private:
     void fetch_and_send_loop();
     void acknoledge_handling_loop();
     void received_message_loop();
-    void task_launcher(TSVector<function<void()>> & t);
+    void task_launcher(TSVector<tuple<string,function<void()>>> & t);
     void threadWiper();
 };
 

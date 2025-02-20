@@ -1,6 +1,6 @@
 #include "server-udp.hpp"
 
-ServerUDP::ServerUDP():sequence(0),packet_failure(0),ms_send_interval(1),ms_timeout_interval(ms_send_interval*3),stop_condition(false),client_address_available(false){
+ServerUDP::ServerUDP():sequence(0),packet_failure(0),ms_send_interval(2),ms_timeout_interval(ms_send_interval*3),stop_condition(false),client_address_available(false){
     initialize();
     main_loop();
 }
@@ -65,15 +65,15 @@ void ServerUDP::main_loop(){
         this->threadWiper();
     };
 
-    tasks.push_back(move(task_message_handler_loop));
-    tasks.push_back(move(task_fetch_and_send_loop));
-    tasks.push_back(move(task_acknoledge_handling_loop));
-    tasks.push_back(move(task_received_message_loop));
-    tasks.push_back(move(task_connection_status_monitor));
-    tasks.push_back(move(task_threadWiper));
+    tasks.push_back(tuple(string("udp-Smessage"),move(task_message_handler_loop)));
+    tasks.push_back(tuple(string("udp-Sfetch"),move(task_fetch_and_send_loop)));
+    tasks.push_back(tuple(string("udp-Sacknoledge"),move(task_acknoledge_handling_loop)));
+    tasks.push_back(tuple(string("udp-Sreceived"),move(task_received_message_loop)));
+    tasks.push_back(tuple(string("udp-SconnectionMonitor"),move(task_connection_status_monitor)));
+    tasks.push_back(tuple(string("udp-SthreadWiper"),move(task_threadWiper)));
 
     while(tasks.size()>0){
-        workers.push_back(thread([this](TSVector<function<void()>> & tasks){this->task_launcher(tasks);},ref(tasks)));
+        workers.push_back(thread([this](TSVector<tuple<string,function<void()>>> & tasks){this->task_launcher(tasks);},ref(tasks)));
     }
 }
 
@@ -197,7 +197,7 @@ void ServerUDP::fetch_and_send_loop(){
 
         sent_messages.insert(sequence,data);
 
-        t_tasks.push_back(move([this](){
+        t_tasks.push_back(tuple(string("udp-timer"),move([this](){
             bool stop = false;
             int retry = 0;
             while(!stop){
@@ -225,11 +225,11 @@ void ServerUDP::fetch_and_send_loop(){
                 }
 
             }
-        }));
+        })));
 
         {
             lock_guard<mutex> lock(t_worker_mutex);
-            t_workers.push_back(thread([this](TSVector<function<void()>> & t_tasks){this->task_launcher(t_tasks);},ref(t_tasks)));
+            t_workers.push_back(thread([this](TSVector<tuple<string,function<void()>>> & t_tasks){this->task_launcher(t_tasks);},ref(t_tasks)));
         }
 
   
@@ -323,16 +323,19 @@ void ServerUDP::received_message_loop(){
  * 
  */
 
-void ServerUDP::task_launcher(TSVector<function<void()>> & t){
+void ServerUDP::task_launcher(TSVector<tuple<string,function<void()>>> & t){
+    
     while(!t.empty()){
         function<void()> f;
         {
             lock_guard<mutex> lock(task_queue_mutex);
             
-            if (t.empty()){
+            if(t.empty()){
                 return;
             }
-            f = t.back();
+            tuple<string,function<void()>> entry = t.back();
+            pthread_setname_np(pthread_self(), get<0>(entry).c_str());
+            f = get<1>(entry);
             t.pop_back();
             //cout << "A New thread is loaded with a new task." << endl;
         }
